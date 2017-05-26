@@ -1,10 +1,11 @@
 {
   "name": "inky",
   "productName": "Inky",
-  "version": "0.2.0",
+  "version": "0.7.1",
   "description": "An editor for ink",
   "main": "main-process/main.js",
   "scripts": {
+    "postinstall": "node ../build/createDocumentnavigation.js && markdown-html resources/Documentation/WritingWithInk.md -s resources/Documentation/documentation.css -o renderer/documentation/embedded.html",
     "start": "electron main-process/main.js"
   },
   "repository": {
@@ -23,10 +24,13 @@
   },
   "homepage": "http://www.inklestudios.com/ink",
   "devDependencies": {
-    "electron-prebuilt": "^0.37.8"
+    "electron": "^1.4.3",
+    "markdown-html": "^0.0.8",
+    "spectron": "^3.2.6"
   },
   "dependencies": {
-    "chokidar": "^1.5.1",
+    "chokidar": "^1.6.0",
+    "inkjs": "^1.5.0",
     "lodash": "^4.13.1",
     "mkdirp": "^0.5.1",
     "randomstring": "^1.1.5"

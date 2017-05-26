@@ -49,8 +49,8 @@ body {
   height: 49px;
   background: #FBFBFB;
   border-bottom: 1px solid #DDD;
-  cursor: default;
   z-index: 50;
+  cursor: default;
   -webkit-user-select: none;
 }
 
@@ -76,12 +76,12 @@ h1.title {
   pointer-events: none;
 }
 
-.win32 #toolbar {
+.win32 #toolbar, .linux #toolbar {
   height: 30px;
   background: #f0f0f0;
 }
 
-.win32 h1.title {
+.win32 h1.title, .linux h1.title {
   display: none;
 }
 
@@ -115,7 +115,7 @@ h1.title {
   z-index: 1; /* On top of left/right buttons */
 }
 
-.win32 #toolbar div.issuesSummary {
+.win32 #toolbar div.issuesSummary, .linux #toolbar div.issuesSummary {
   top: 0;
 }
 
@@ -202,7 +202,7 @@ img.issue-icon.warning {
   border: 1px solid #E2E2E2;
 }
 
-.win32  #toolbar .issue-popup {
+.win32  #toolbar .issue-popup, .linux #toolbar .issue-popup {
   top: 35px;
 }
 
@@ -462,7 +462,7 @@ img.issue-icon.warning {
 .sidebar .footer .add-to-main-ink span {
   float: right;
   margin-right: 25px;
-} 
+}
 
 .sidebar .footer .form-buttons {
   position: relative;
@@ -496,7 +496,7 @@ img.issue-icon.warning {
   background: white;
 }
 
-.win32 #main {
+.win32 #main, .linux #main {
   top: 30px;
 }
 
@@ -559,6 +559,16 @@ img.issue-icon.warning {
   text-decoration: underline;
 }
 
+/* Hide cursor in unfocussed editor view */
+.ace_hidden-cursors {
+  opacity:0
+}
+
+/* Hide other marks (e.g. bracket matchers) in unfocussed editor view */
+.ace_editor:not(.ace_focus) .ace_marker-layer .ace_bracket {
+  opacity: 0;
+}
+
 #player {
   display: block;
   position: absolute;
@@ -566,6 +576,10 @@ img.issue-icon.warning {
   bottom: 0;
   right: 0;
   left: 50%;
+
+  font-family: Verdana, Geneva, sans-serif;
+  font-weight: lighter;
+  color: #555;
 }
 
 #player .innerText {
@@ -578,12 +592,22 @@ img.issue-icon.warning {
   padding: 0 40px 0 40px;
 }
 
-#player {
-  font-family: Verdana, Geneva, sans-serif;
-  font-weight: lighter;
-  color: #555;
+#player.altKey .innerText p span:hover {
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+#player .hiddenBuffer {
+  opacity: 0;
+  pointer-events: none;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
   overflow: scroll;
 }
+
 
 #player hr {
   border: 0;
@@ -605,6 +629,16 @@ img.issue-icon.warning {
 #player p.choice a:hover {
   color: #555;
   text-decoration: underline;
+}
+
+#player p.tags {
+  color: #AAA;
+  text-align: center;
+  font-family: monospace;
+}
+
+#main.hideTags #player p.tags {
+    display: none;
 }
 
 #player p.end {
@@ -637,6 +671,91 @@ img.issue-icon.warning {
 #player pre.diagnostic {
   color: gray;
 }
+
+#player .expressionWatch {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  background: white;
+  z-index: 1;
+}
+
+#player .scrollContainer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  overflow: scroll;
+}
+
+#player .expressionWatch td {
+  /*background: red;*/
+  border-bottom: 1px solid #DDD;
+}
+
+#player td.expressionLabel {
+  background: #FBFBFB;
+  color: #878787;
+  width: 10%;
+  min-width: 80px;
+  text-align: right;
+  border-right: 1px solid #DDD;
+  padding-right: 5px;
+  cursor: default;
+  -webkit-user-select: none;
+}
+
+#player td.expressionInput {
+  background: white;
+  padding: 0;
+  padding-left: 5px;
+  position: relative;
+}
+
+#player td.expressionInput .removeButton {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 30px;
+  text-align: center;
+  color: gray;
+  font-size: 12pt;
+  line-height: 22px;
+}
+
+#player td.expressionInput .removeButton:hover {
+  color: black;
+}
+
+#player td.expressionInput:focus {
+  outline: none; 
+}
+
+#player .evaluationResult {
+  padding-bottom: 10px;
+  text-align: center;
+}
+
+#player .evaluationResult span {
+  text-align: center;
+  display: inline;
+  /*border: 1px solid #BBB;*/
+  background: #DDD;
+  color: white;
+  padding: 2px 20px 2px 20px;
+  border-radius: 20px;
+  font-size: 9pt;
+  white-space: nowrap;
+}
+
+#player .evaluationResult.error span {
+  background: #bf5e5e;
+}
+
+/* Toolbar buttons */
 
 #restart {
   right: 5px;

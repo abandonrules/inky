@@ -11,7 +11,8 @@ const mkdirp = require('mkdirp');
 // inklecate is packaged outside of the main asar bundle since it's executable
 const inklecateNames = {
     "darwin": "/ink/inklecate_mac",
-    "win32":  "/ink/inklecate_win.exe"
+    "win32":  "/ink/inklecate_win.exe",
+    "linux": "/ink/inklecate_win.exe"
 }
 const inklecateRootPathRelease = path.join(__dirname, "../../app.asar.unpacked/main-process");
 const inklecateRootPathDev = __dirname;
@@ -21,33 +22,24 @@ var inklecatePath = path.join(inklecateRootPathRelease, inklecateNames[process.p
 // If inklecate isn't available here, we're probably in development mode (not packaged into a release asar)
 try { fs.accessSync(inklecatePath) }
 catch(e) {
-    console.log(`Inklecate not at: ${inklecatePath}`);
-    console.log(`Loading inklecate from local directory instead (we're in development mode)`);
     inklecatePath = path.join(inklecateRootPathDev, inklecateNames[process.platform]);
-    console.log(inklecatePath);
 }
 
 // TODO: Customise this for different projects
 // Is this the right temporary directory even on Mac? Seems like a bad practice
 // to keep files around in a "public" place that the user might wish to keep private.
-const tempInkPath = process.platform == "darwin" ? "/tmp/inky_compile" : path.join(process.env.temp, "inky_compile");
-console.log("inklcate temp directory: "+tempInkPath);
+const tempInkPath = (process.platform == "darwin" || process.platform == "linux") ? "/tmp/inky_compile" : path.join(process.env.temp, "inky_compile");
 
 var sessions = {};
 
 
 function compile(compileInstruction, requester) {
-    
+
     var sessionId = compileInstruction.sessionId;
 
-    if( compileInstruction.play )
-        console.log("Playing "+sessionId);
-    else if( compileInstruction.export ) {
-        console.log("Exporting session "+sessionId);
-    }
+    console.log(`Launching inklecate for session id '${sessionId}'`);
 
     var uniqueDirPath = path.join(tempInkPath, compileInstruction.namespace);
-    console.log("Unique dir path: "+uniqueDirPath);
 
     // TODO: handle errors
     mkdirp.sync(uniqueDirPath);
@@ -55,25 +47,20 @@ function compile(compileInstruction, requester) {
     // Write out updated files
     for(var relativePath in compileInstruction.updatedFiles) {
 
-        console.log("Relative path: "+relativePath);
-
         var fullInkPath = path.join(uniqueDirPath, relativePath);
         var inkFileContent = compileInstruction.updatedFiles[relativePath];
 
         if( path.dirname(relativePath) != "." ) {
             var fullDir = path.dirname(fullInkPath);
-            console.log("MAKING DIR: "+fullDir);
             mkdirp.sync(fullDir);
         }
-
-        console.log("WRITING TO: "+fullInkPath);
 
         fs.writeFileSync(fullInkPath, inkFileContent);
     }
 
     var mainInkPath = path.join(uniqueDirPath, compileInstruction.mainName);
 
-    var inklecateOptions = ["-c"];
+    var inklecateOptions = ["-ck"];
 
     if( compileInstruction.play )
         inklecateOptions[0] += "p";
@@ -97,15 +84,18 @@ function compile(compileInstruction, requester) {
     sessions[sessionId] = {
         process:playProcess,
         requesterWebContents: requester,
-        stopped: false
+        stopped: false,
+        ended: false,
+        evaluatingExpression: false,
+        justRequestedDebugSource: false
     };
+    var session = sessions[sessionId];
 
     playProcess.stderr.setEncoding('utf8');
     playProcess.stderr.on('data', (data) => {
         // Strip Byte order mark
         data = data.replace(/^\uFEFF/, '');
         if( data.length > 0 ) {
-            console.log(`stderr: ${data}`);
             requester.send('play-story-unexpected-error', data, sessionId);
         }
     });
@@ -115,8 +105,24 @@ function compile(compileInstruction, requester) {
 
     var inkErrors = [];
 
+    var onEndOfStory = (code) => {
+        if( sessions[sessionId] && !sessions[sessionId].ended ) {
+            sessions[sessionId].ended = true;
+
+            if( inkErrors.length > 0 )
+                requester.send('play-generated-errors', inkErrors, sessionId);
+
+            if( code == 0 || code === undefined ) {
+                requester.send('inklecate-complete', sessionId, jsonExportPath);
+            }
+            else {
+                requester.send('play-exit-due-to-error', code, sessionId);
+            }
+        }
+    }
+
     playProcess.stdout.on('data', (text) => {
-        
+
         // Strip Byte order mark
         text = text.replace(/^\uFEFF/, '');
         if( text.length == 0 ) return;
@@ -127,54 +133,76 @@ function compile(compileInstruction, requester) {
             var line = lines[i].trim();
 
             var choiceMatches = line.match(/^(\d+):\s+(.*)/);
-            var errorMatches = line.match(/^(ERROR|WARNING|RUNTIME ERROR|TODO): '([^']+)' line (\d+): (.+)/);
+            var errorMatches = line.match(/^(ERROR|WARNING|RUNTIME ERROR|TODO): ('([^']+)' )?line (\d+): (.+)/);
+            var tagMatches = line.match(/^(# tags:) (.+)/);
             var promptMatches = line.match(/^\?>/);
+            var debugSourceMatches = line.match(/^DebugSource: (line (\d+) of (.*)|Unknown source)/);
+            var endOfStoryMatches = line.match(/^--- End of story ---/);
 
             if( errorMatches ) {
-                inkErrors.push({
-                    type: errorMatches[1],
-                    filename: errorMatches[2],
-                    lineNumber: parseInt(errorMatches[3]),
-                    message: errorMatches[4]
-                });
+                var errorMessage = errorMatches[5];
+                if( session.evaluatingExpression ) {
+                    requester.send('play-evaluated-expression-error', errorMessage, sessionId);
+                } else {
+                    inkErrors.push({
+                        type: errorMatches[1],
+                        filename: errorMatches[3],
+                        lineNumber: parseInt(errorMatches[4]),
+                        message: errorMessage
+                    });
+                }
+            } else if( tagMatches ) {
+                var tagsStr = tagMatches[2];
+                var tags = tagsStr.split(", ");
+                requester.send('play-generated-tags', tags, sessionId);
             } else if( choiceMatches ) {
                 requester.send("play-generated-choice", {
                     number: parseInt(choiceMatches[1]),
                     text: choiceMatches[2]
                 }, sessionId);
             } else if( promptMatches ) {
-                requester.send('play-requires-input', sessionId);
+                if( session.evaluatingExpression )
+                    session.evaluatingExpression = false;
+                else if( session.justRequestedDebugSource )
+                    session.justRequestedDebugSource = false;
+                else
+                    requester.send('play-requires-input', sessionId);
+            } else if( debugSourceMatches ) {
+                session.justRequestedDebugSource = true;
+                requester.send('return-location-from-source', sessionId, {
+                    lineNumber: parseInt(debugSourceMatches[2]),
+                    filename: debugSourceMatches[3]
+                });
+            } else if( endOfStoryMatches ) {
+                onEndOfStory();
             } else if( line.length > 0 ) {
-                requester.send('play-generated-text', line, sessionId);
+                if( session.evaluatingExpression ) {
+                    requester.send('play-evaluated-expression', line, sessionId);
+                } else {
+                    requester.send('play-generated-text', line, sessionId);
+                }
+                
             }
 
         }
 
-        console.log("STORY DATA (sesssion "+sessionId+"): "+text);
     })
 
     var processCloseExit = (code) => {
 
-        if( !sessions[sessionId] )
+        if( !sessions[sessionId] ) {
             return;
+        }
 
         var forceStoppedByPlayer = sessions[sessionId].stopped;
         if( !forceStoppedByPlayer ) {
-
-            if( inkErrors.length > 0 )
-                requester.send('play-generated-errors', inkErrors, sessionId);
-
-            if( code == 0 ) {
-                console.log("Completed story or exported successfully at "+jsonExportPath);
-                requester.send('inklecate-complete', sessionId, jsonExportPath);
-            }
-            else {
-                console.log("Story exited unexpectedly with error code "+code+" (session "+sessionId+")");
-                requester.send('play-exit-due-to-error', code, sessionId);
-            }
+            onEndOfStory(code);
+        } else {
         }
 
         delete sessions[sessionId];
+
+        console.log(` - Ended inklecate session id ${sessionId}`);
     };
 
     playProcess.on('close', processCloseExit);
@@ -188,25 +216,15 @@ function stop(sessionId) {
         processObj.process.kill('SIGTERM');
         return true;
     } else {
-        console.log("Could not find process to stop");
         return false;
     }
 }
 
 function killSessions(optionalBrowserWindow) {
-    if( optionalBrowserWindow )
-        console.log("Kill sessions for window");
-    else
-        console.log("Kill all sessions");
-
     for(var sessionId in sessions) {
 
         if( !optionalBrowserWindow || sessions[sessionId] &&
             sessions[sessionId].requesterWebContents == optionalBrowserWindow.webContents ) {
-
-            if( optionalBrowserWindow )
-                console.log("Found session to stop: "+sessionId);
-
             stop(sessionId);
         }
     }
@@ -217,21 +235,37 @@ ipc.on("compile", (event, compileInstruction) => {
 });
 
 ipc.on("play-stop-ink", (event, sessionId) => {
-    console.log("got request to stop "+sessionId);
     const requester = event.sender;
     if( stop(sessionId) )
         requester.send('play-story-stopped', sessionId);
 });
 
 ipc.on("play-continue-with-choice-number", (event, choiceNumber, sessionId) => {
-    console.log("inklecate received play choice number: "+choiceNumber+" for session "+sessionId);
     if( sessions[sessionId] ) {
         const playProcess = sessions[sessionId].process;
         if( playProcess )
             playProcess.stdin.write(""+choiceNumber+"\n");
     }
-    
 });
+
+ipc.on("evaluate-expression", (event, expressionText, sessionId) => {
+    var session = sessions[sessionId];
+    if( session ) {
+        if( session.process ) {
+            session.evaluatingExpression = true;
+            session.process.stdin.write(`"${expressionText}"\n`);
+        }
+    }
+});
+
+ipc.on("get-location-in-source", (event, offset, sessionId) => {
+    if( sessions[sessionId] ) {
+        const playProcess = sessions[sessionId].process;
+        if( playProcess )
+            playProcess.stdin.write("DebugSource("+offset+")\n");
+    }
+});
+
 
 
 exports.Inklecate = {

@@ -2,20 +2,24 @@ const electron = require("electron");
 const ipc = electron.ipcRenderer;
 const remote = electron.remote;
 const path = require("path");
-
 const $ = window.jQuery = require('./jquery-2.2.3.min.js');
 
-//remote.getCurrentWindow().webContents.openDevTools();
+// Debug
+const loadTestInk = false;
+// remote.getCurrentWindow().webContents.openDevTools();
 
 // Helpers in global objects and namespace
 require("./util.js");
-
 require("./split.js");
+
+// Set up context menu
+require("./contextmenu.js");
 
 const EditorView = require("./editorView.js").EditorView;
 const PlayerView = require("./playerView.js").PlayerView;
 const ToolbarView = require("./toolbarView.js").ToolbarView;
 const NavView = require("./navView.js").NavView;
+const ExpressionWatchView = require("./expressionWatchView").ExpressionWatchView;
 const LiveCompiler = require("./liveCompiler.js").LiveCompiler;
 const InkProject = require("./inkProject.js").InkProject;
 const NavHistory = require("./navHistory.js").NavHistory;
@@ -51,9 +55,16 @@ InkProject.setEvents({
 
 // Wait for DOM to be ready before kicking most stuff off
 // (some of the views get confused otherwise)
-$(document).ready(() => { 
-    if( InkProject.currentProject == null ) 
+$(document).ready(() => {
+    if( InkProject.currentProject == null ) {
         InkProject.startNew();
+
+        // Debug
+        if( loadTestInk ) {
+            var testInk = require("fs").readFileSync(path.join(__dirname, "test.ink"), "utf8");
+            InkProject.currentProject.mainInk.setValue(testInk);
+        }
+    }
 });
 
 function gotoIssue(issue) {
@@ -69,22 +80,24 @@ NavHistory.setEvents({
     }
 })
 
+
 LiveCompiler.setEvents({
-    resetting: () => {
+    resetting: (sessionId) => {
         EditorView.clearErrors();
         ToolbarView.clearIssueSummary();
-        PlayerView.prepareForNextContent();
+        PlayerView.prepareForNewPlaythrough(sessionId);
     },
     selectIssue: gotoIssue,
-    textAdded: (text, replaying) => {
-        var animated = !replaying;
-        PlayerView.addTextSection(text, animated);
+    textAdded: (text) => {
+        PlayerView.addTextSection(text);
     },
-    choiceAdded: (choice, replaying) => {
-        var animated = !replaying;
-        if( !replaying ) {
-            PlayerView.addChoice(choice, animated, () => {
-                LiveCompiler.choose(choice);
+    tagsAdded: (tags) => {
+        PlayerView.addTags(tags);
+    },
+    choiceAdded: (choice, isLatestTurn) => {
+        if( isLatestTurn ) {
+            PlayerView.addChoice(choice, () => {
+                LiveCompiler.choose(choice)
             });
         }
     },
@@ -100,11 +113,35 @@ LiveCompiler.setEvents({
 
         ToolbarView.updateIssueSummary(errors);
     },
-    playerPrompt: (replaying, isLast) => {
-        if( replaying )
-            PlayerView.addHorizontalDivider();
-        else
-            PlayerView.scrollToBottom();
+    playerPrompt: (replaying, doneCallback) => {
+
+        var expressionIdx = 0;
+        var tryEvaluateNextExpression = () => {
+
+            // Finished evaluating expressions? End of this turn.
+            if( expressionIdx >= ExpressionWatchView.numberOfExpressions() ) {
+                if( replaying ) {
+                    PlayerView.addHorizontalDivider();
+                } else {
+                    PlayerView.contentReady();
+                }
+                doneCallback();
+                return;
+            }
+
+            // Try to evaluate this expression
+            var exprText = ExpressionWatchView.getExpression(expressionIdx);
+            LiveCompiler.evaluateExpression(exprText, (result, error) => {
+                PlayerView.addEvaluationResult(result, error);
+                expressionIdx++;
+                tryEvaluateNextExpression();
+            });
+        };
+
+        tryEvaluateNextExpression();
+    },
+    replayComplete: (sessionId) => {
+        PlayerView.showSessionView(sessionId);
     },
     storyCompleted: () => {
         PlayerView.addTerminatingMessage("End of story", "end");
@@ -118,7 +155,7 @@ LiveCompiler.setEvents({
             PlayerView.addTerminatingMessage("Here is some diagnostic information:", "error");
 
             // Make it a bit less verbose and concentrate on the useful stuff
-            // [0x000ea] in /Users/blah/blah/blah/blah/ink/ParsedHierarchy/FlowBase.cs:377 
+            // [0x000ea] in /Users/blah/blah/blah/blah/ink/ParsedHierarchy/FlowBase.cs:377
             // After replacement:
             // in FlowBase.cs line 377
             error = error.replace(/\[\w+\] in (?:[\w/]+?)(\w+\.cs):(\d+)/g, "in $1 line $2");
@@ -150,12 +187,33 @@ EditorView.setEvents({
     "navigate": () => NavHistory.addStep()
 });
 
+PlayerView.setEvents({
+    "jumpToSource": (outputTextOffset) => {
+        LiveCompiler.getLocationInSource(outputTextOffset, (result) => {
+            if( result && result.filename && result.lineNumber ) {
+                InkProject.currentProject.showInkFile(result.filename);
+                EditorView.gotoLine(result.lineNumber);
+            }
+        });
+    }
+});
+
+ExpressionWatchView.setEvents({
+    "change": () => {
+        LiveCompiler.setEdited();
+        $("#player .scrollContainer").css("top", ExpressionWatchView.totalHeight()+"px");
+    }
+});
+
 ToolbarView.setEvents({
     toggleSidebar: () => { NavView.toggle(); },
     navigateBack: () => NavHistory.back(),
     navigateForward: () => NavHistory.forward(),
     selectIssue: gotoIssue,
-    stepBack: () => { LiveCompiler.stepBack(); },
+    stepBack: () => {
+        PlayerView.previewStepBack();
+        LiveCompiler.stepBack();
+    },
     rewind:   () => { LiveCompiler.rewind(); }
 });
 
@@ -170,4 +228,11 @@ NavView.setEvents({
         InkProject.currentProject.showInkFile(newInkFile);
         NavHistory.addStep();
     }
+});
+
+ipc.on("set-tags-visible", (event, visible) => {
+    if( visible )
+        $("#main").removeClass("hideTags");
+    else
+        $("#main").addClass("hideTags");
 });

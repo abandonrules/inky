@@ -42,7 +42,7 @@ var inkHighlightRules = function() {
             include: "#statements"
         }],
         "#TODO": [{
-            regex: /^(\s*)(TODO\b)([:\w\ \t]+)/,
+            regex: /^(\s*)(TODO\b)([:\w\ \t\"\,\;\(\)\'\.\-]+)/,
             token: [
                 "todo", // whitespace
                 "todo.TODO", // TODO
@@ -125,8 +125,12 @@ var inkHighlightRules = function() {
             ]
         }, {
             // Tunnel onwards
-            regex: /->->/,
-            token: "divert.to-tunnel"
+            regex: /(->->)(\s*)(\w[\w\.\s]*)/,
+            token: [
+                "divert.to-tunnel",      // ->->
+                "divert",                // whitespace
+                "divert.target"          // target.name
+            ]
         }, {
             // Divert with parameters: -> knot (param, -> param2)
             regex: /(->|<-)(\s*)(\w[\w\.\s]*?)(\s*)(\()/,
@@ -224,6 +228,45 @@ var inkHighlightRules = function() {
                 defaultToken: "var-decl"
             }]
         }],
+        "#listDef": [{
+            regex: /(\s*)(LIST)/,
+            token: [
+                "list-decl", // whitespace
+                "list-decl.keyword"
+            ],
+            push: [
+                {
+                    regex: /(\s*=\s*)/,
+                    token: [
+                        "list-decl"
+                    ],
+                    next: "#listItem"
+                },
+                {
+                    regex: /$/,
+                    next: "pop"
+                },
+                {
+                    defaultToken: "list-decl"
+                }
+            ]
+        }],
+
+        "#listItemsSeparator": [{
+            regex: /(\s*,\s*)/,
+            token: ["list-decl"],
+            next: "#listItem"
+        }, {
+            regex: /$/,
+            token: [""],
+            next: "start"
+        }],
+
+        "#listItem": [{
+            regex: /([\w\(\)=\d\s]+)/,
+            token: ["list-decl.item"],
+            next: "#listItemsSeparator"
+        }],
         "#INCLUDE": [{
             regex: /(\s*)(INCLUDE\b)/,
             token: [
@@ -248,6 +291,31 @@ var inkHighlightRules = function() {
                 defaultToken: "include"
             }]
         }],
+
+        "#EXTERNAL": [{
+            regex: /(\s*)(EXTERNAL\b)/,
+            token: [
+                "external",
+                "external.keyword"
+            ],
+
+            // The rest of the external line unline a newline
+            push: [{
+                regex: /(\s*)([^\r\n]+)/,
+                token: [
+                    "external", // whitespace
+                    "external.declaration"
+                ]
+            }, 
+            { 
+                regex: /$/,
+                token: "external",
+                next: "pop"
+            }, {
+                defaultToken: "external"
+            }]
+        }],
+
         "#inlineConditional": [{
             regex: /(\{)([^:\|\}]+:)/,
             token: [
@@ -319,16 +387,7 @@ var inkHighlightRules = function() {
                     "logic.multiline.branch",
                     "logic.multiline.branch.operator",
                     "logic.multiline.branch.condition"
-                ],
-                push: [{
-                    token: "logic.multiline.branch",
-                    regex: /$/,
-                    next: "pop"
-                }, {
-                    include: "#mixedContent"
-                }, {
-                    defaultToken: "logic.multiline.branch.innerContent"
-                }]
+                ]
             }, {
                 include: "#statements"
             }, {
@@ -338,6 +397,10 @@ var inkHighlightRules = function() {
         "#logicLine": [{
             token: "logic.tilda",
             regex: /\s*~\s*.*$/
+        }],
+        "#tags": [{
+            token: "tag",
+            regex: /#.*/
         }],
         "#mixedContent": [{
             include: "#inlineConditional"
@@ -350,6 +413,8 @@ var inkHighlightRules = function() {
         }, {
             include: "#divert"
         }, {
+            include: "#tags"
+        }, {
             token: "glue",
             regex: /<>/
         }],
@@ -359,6 +424,10 @@ var inkHighlightRules = function() {
             include: "#TODO"
         }, {
             include: "#globalVAR"
+        }, {
+            include: "#listDef"
+        }, {
+            include: "#EXTERNAL"
         }, {
             include: "#INCLUDE"
         }, {

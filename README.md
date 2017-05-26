@@ -12,6 +12,7 @@
 - **Syntax highlighting**
 - **As-you-type error highlighting**. Inky is constantly compiling, allowing you to fix errors early.
 - **Issue browser**: Lists errors, warnings and TODOs in your **ink**,  and allows you to jump to the exact line number and file in the source.
+- **Jump to definition**: Divert targets (like `-> theStreet`) are hyperlinked can be followed by alt-clicking.
 - **Support multi-file projects**: - Inky automatically infers your story's structure from the `INCLUDE` lines, meaning that there's no need for an additional project file. To create a new include file, simply type `INCLUDE yourfile.ink` where you want to include it.
 - **Export to JSON**: Although this isn't necessary if you're using the [ink-Unity-integration plugin](https://www.assetstore.unity3d.com/en/#!/content/60055), Inky allows you to export to ink's compiled JSON format, which is especially useful in other ink runtime implementations, such as [inkjs](https://github.com/y-lohse/inkjs), for running **ink** on the web.
 - **File watching**: Modern text editors, including Inky, watch for changes to files on disk, so that if you change them it reflects those changes. This is especially helpful if you keep your **ink** in source control.
@@ -26,13 +27,9 @@ To keep up to date with the latest news about ink [sign up for the mailing list]
 
 ## Download
 
-### Mac and Windows
+### Mac, Windows and Linux
 
 [Download the latest release](http://www.github.com/inkle/inky/releases/latest)
-
-### Linux
-
-Inky was developed in [Electron](http://electron.atom.io/) (using web technologies), so porting is straightforward, and producing a Linux version should be a simple question of bug fixing and adding an extra line to the packaging script. If you want to help out with testing and fixing, please [discuss](http://github.com/inkle/inky/issues) and/or submit a pull request!
 
 ## Implementation details
 
@@ -43,6 +40,31 @@ Inky is built using:
 * [Photon](http://photonkit.com/), for some of the components. However, the dependency could probably be removed, since its only used for small portions of the CSS.
 
 Inky includes a copy of **inklecate**, the command line **ink** compiler.
+
+## Help develop Inky!
+
+Take a look at the [issues page](https://github.com/inkle/inky/issues) for an issue with a "help wanted" label. We try to provide some basic instructions on how to get started with the development of the feature whenever we add the label.
+
+To build the project:
+
+* Install [node.js](https://nodejs.org/en/) if you don't already have it
+* Clone the repo
+* On Mac, double-click the `INSTALL_AND_RUN.command` script. On Windows, open Powershell, cd into the app directory, and type `npm install`, then `npm start`.
+* For subsequent runs, if no npm packages have changed, you can run the `RUN.command` script on Mac, or type `npm start` in the shell (on Windows).
+
+### Linux
+* Install [node.js](https://nodejs.org/en/) if you don't already have it
+* Install Wine (This is needed for the compiler not to actually run Inky)
+* In the terminal run ./INSTALL_AND_RUN.command
+* cd into the app directory, and type `npm install`, then `npm start`.
+
+When launching on **Linux**, you may encounter the following error: `inklecate_win.exe: cannot execute binary file`. This is because the system doesn't know it should use **Wine** to run `inklecate_win.exe`.  
+One way of fixing this is by creating a file named `wine.conf` under `/etc/binfmt.d/` containing the following lines:
+```
+# Start WINE on Windows executables
+:DOSWin:M::MZ::/usr/bin/wine:
+```
+(You can read more about binfmt on [kernel.org](https://www.kernel.org/doc/Documentation/binfmt_misc.txt))
 
 ## License
 
